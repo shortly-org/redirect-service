@@ -1,0 +1,81 @@
+spring:
+  application:
+    name: redirect-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+    properties:
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
+      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+        max.block.ms: 600000
+        delivery.timeout.ms: 600000
+  datasource:
+    url: jdbc:postgresql://${DATABASE_REPLICA_HOST:localhost}:${DATABASE_PORT:5432}/${DATABASE_NAME:shortly}${DATABASE_CONN_PARAMS:}
+    username: ${DATABASE_USER:redirect_reader}
+    password: ${DATABASE_PASSWORD:redirect_reader}
+    hikari:
+      pool-name: replica
+      maximum-pool-size: 5
+      connection-init-sql: SET statement_timeout = '25ms'
+      connection-timeout: 250
+      validation-timeout: 250
+      read-only: true
+      data-source-properties:
+        socketTimeout: 1
+  threads:
+    virtual:
+      enabled: true
+
+shortly:
+  redirect:
+    feed:
+      poll-interval: 500ms
+    clicks:
+      queue-size: 100000
+    primary-datasource:
+      jdbc-url: jdbc:postgresql://${DATABASE_PRIMARY_HOST:localhost}:${DATABASE_PORT:5432}/${DATABASE_NAME:shortly}${DATABASE_CONN_PARAMS:}
+      username: ${DATABASE_USER:redirect_reader}
+      password: ${DATABASE_PASSWORD:redirect_reader}
+      pool-name: primary
+      maximum-pool-size: 1
+      connection-timeout: 250
+      read-only: true
+      connection-init-sql: SET statement_timeout = '2s'
+      data-source-properties:
+        socketTimeout: 5
+
+resilience4j:
+  bulkhead:
+    instances:
+      replica:
+        max-concurrent-calls: 5
+        max-wait-duration: 10ms
+  circuitbreaker:
+    instances:
+      replica:
+        ignore-exceptions:
+          - io.github.resilience4j.bulkhead.BulkheadFullException
+        sliding-window-size: 20
+        minimum-number-of-calls: 20
+        wait-duration-in-open-state: 5s
+
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,feed

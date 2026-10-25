@@ -1,0 +1,54 @@
+datadog:
+  metrics: ["shortly_.*", "hikaricp_.*", "resilience4j_.*"]
+
+ports:
+  http: 8080
+  management: 8081
+
+ingress:
+  host: origin.shortly.internal
+  className: alb-internet-facing
+
+replicas:
+  min: 2
+  max: 6
+targetCpu: 60
+minAvailable: 1
+
+resources:
+  requests: { cpu: 500m, memory: 1Gi }
+  limits: { cpu: "1", memory: 1Gi }
+
+nodeSelector:
+  shortly.example/pool: redirect
+tolerations:
+  - { key: shortly.example/pool, operator: Equal, value: redirect, effect: NoSchedule }
+  - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 30 }
+  - { key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 30 }
+
+zoneSpread:
+  whenUnsatisfiable: DoNotSchedule
+
+egressPorts: [5432, 9096]
+
+env:
+  DATABASE_REPLICA_HOST: shortly-production-reader.shortly.internal
+  DATABASE_PRIMARY_HOST: shortly-production-writer.shortly.internal
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: shortly
+  DATABASE_CONN_PARAMS: "?sslmode=verify-full&sslrootcert=/etc/ssl/rds/global-bundle.pem"
+  KAFKA_SECURITY_PROTOCOL: SASL_SSL
+  KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+
+externalSecrets:
+  secrets:
+    - name: database
+      remoteKey: shortly/production/redirect-service/database
+      items:
+        - { env: DATABASE_USER, property: username }
+        - { env: DATABASE_PASSWORD, property: password }
+    - name: kafka
+      remoteKey: shortly/production/redirect-service/kafka
+      items:
+        - { env: KAFKA_BOOTSTRAP_SERVERS, property: bootstrap_servers }
+        - { env: KAFKA_SASL_JAAS_CONFIG, property: jaas_config }
